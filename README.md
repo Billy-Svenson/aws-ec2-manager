@@ -20,4 +20,9 @@ Clone this repository:
 ```bash
 git clone https://github.com/Billy-Svenson/aws-ec2-manager.git
 cd aws-ec2-manager
-chmod +x *.sh
+chmod +x manager.sh launch.sh utils.sh
+#To launch new instance
+./launch.sh
+
+#To manage instance
+./manage.sh
