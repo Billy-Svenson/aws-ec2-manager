@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Load shared functions
 source ./utils.sh
-source ./list.sh
+# source ./list.sh
 
 while true; do
   echo "================ AWS Manager ================"
