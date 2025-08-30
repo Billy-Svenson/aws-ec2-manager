@@ -18,6 +18,6 @@ Automates AWS EC2 instance launching, key/security group management, and SSH acc
 ## Setup
 Clone this repository:
 ```bash
-git clone https://github.com/YOUR_USERNAME/aws-ec2-manager.git
+git clone https://github.com/Billy-Svenson/aws-ec2-manager.git
 cd aws-ec2-manager
 chmod +x *.sh
