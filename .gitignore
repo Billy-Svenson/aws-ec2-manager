@@ -1,0 +1,9 @@
+# Ignore private key files
+*.pem
+
+# Ignore instance metadata CSV
+.aws-manager-instances.csv
+
+# Ignore system files
+*.swp
+*.DS_Store
