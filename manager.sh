@@ -3,24 +3,29 @@ set -euo pipefail
 
 # Load shared functions
 source ./utils.sh
-# source ./list.sh
+#source ./list.sh
 
 while true; do
   echo "================ AWS Manager ================"
-  echo "1) Security Groups"
-  echo "2) Instance Info"
-  echo "3) Elastic IPs (EIP)"
-  echo "4) Instance Actions (start/stop/reboot/terminate/resize)"
-  echo "5) Storage (Volumes/Snapshots)"
-  echo "6) Images (AMI)"
-  echo "7) Monitoring (Logs / Cost)#only for root account"
-  echo "8) SSH to instance"
+  echo "1) Launch an Instance"
+  echo "2) Security Groups"
+  echo "3) Instance Info"
+  echo "4) Elastic IPs (EIP)"
+  echo "5) Instance Actions (start/stop/reboot/terminate/resize)"
+  echo "6) Storage (Volumes/Snapshots)"
+  echo "7) Images (AMI)"
+  echo "8) Monitoring (Logs / Cost)#only for root account"
+  echo "9) SSH to instance"
   echo "0) Exit"
   echo "==========================================="
   read -p "Choose an option: " choice
 
   case "$choice" in
     1)
+      echo "Launching instance..."
+      ./launch.sh
+      ;;
+    2)
       list_security_groups() {
         aws ec2 describe-security-groups \
           --query "SecurityGroups[].{ID:GroupId,Name:GroupName,VPC:VpcId,Desc:Description}" \
@@ -29,7 +34,7 @@ while true; do
       echo "📦 Security Groups:"
       list_security_groups
       ;;
-    2)
+    3)
       echo "📦 Instances:"
       instances=$(aws ec2 describe-instances --query \
         "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name, InstanceType, PublicIpAddress]" \
@@ -44,7 +49,7 @@ while true; do
         done <<< "$instances"
       fi
       ;;
-    3)
+    4)
       echo "📦 Elastic IPs:"
       aws ec2 describe-addresses \
         --query "Addresses[].{PublicIp:PublicIp,InstanceId:InstanceId,AllocationId:AllocationId}" \
@@ -82,7 +87,7 @@ while true; do
           ;;
       esac
       ;;
-    4)
+    5)
       echo "📦 Instance Actions:"
       instances=$(aws ec2 describe-instances --query "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name]" --output text | awk 'NF')
       if [[ -z "$instances" ]]; then
@@ -113,22 +118,22 @@ while true; do
         fi
       fi
       ;;
-    5)
+    6)
       echo "📦 Volumes:"
       aws ec2 describe-volumes --query "Volumes[].{ID:VolumeId,Size:Size,State:State,AZ:AvailabilityZone}" --output table
       ;;
-    6)
+    7)
       echo "📦 AMIs:"
       list_amis
       ;;
-    7)
+    8)
       echo "📦 Cost Explorer (last 7 days):"
       aws ce get-cost-and-usage \
         --time-period Start=$(date -d '7 days ago' +%Y-%m-%d),End=$(date +%Y-%m-%d) \
         --granularity DAILY --metrics "UnblendedCost" --query 'ResultsByTime[*].{Date:TimePeriod.Start,Cost:Total.UnblendedCost.Amount}' \
         --output table
       ;;
-    8)
+    9)
       ssh_instance() {
           CSV_FILE="$HOME/.aws-manager-instances.csv"
           if [[ ! -f "$CSV_FILE" ]]; then
@@ -136,41 +141,77 @@ while true; do
               return
           fi
 
-          # list instances from CSV
-          echo "📦 Instances (from metadata CSV):"
-          i=1
-          declare -A map
-          while IFS=',' read -r instance_id instance_name public_ip key_path username sg_id; do
-              [[ "$instance_id" == "instance_id" ]] && continue
-              echo "$i) $instance_id | ${instance_name:-N/A} | $public_ip | $username | $key_path"
-              map[$i]="$instance_id,$public_ip,$key_path,$username,$sg_id"
-              ((i++))
-          done < "$CSV_FILE"
+          echo "📦 Fetching instances from AWS (running or stopped)..."
+          instances=$(aws ec2 describe-instances \
+              --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`].Value|[0],State.Name,KeyName]' \
+              --output text)
 
-          read -p "Choose instance number to SSH: " inst_num
-          IFS=',' read -r instance_id public_ip key_path username sg_id <<< "${map[$inst_num]:-}"
-
-          if [[ -z "$instance_id" ]]; then
-              echo "Invalid instance number."
+          if [[ -z "$instances" ]]; then
+              echo "No instances found on AWS."
               return
           fi
 
-          # Wait until SSH port is open
-          echo "⏳ Waiting for SSH port on $public_ip..."
-          until nc -z -w5 "$public_ip" 22; do
-              echo "Waiting for SSH..."
-              sleep 2
-          done
+          # Display live instances and build map for SSH
+          i=1
+          declare -A map
+          while read -r instance_id instance_name state keyname; do
+              instance_name="${instance_name:-N/A}"
 
-          # Attempt SSH
+              # get key_path, username, sg_id from CSV for this instance
+              csv_line=$(grep "^$instance_id," "$CSV_FILE" || true)
+              IFS=',' read -r _ _ _ key_path username sg_id <<< "$csv_line"
+
+              echo "$i) $instance_id | $instance_name | $state | $keyname"
+              map[$i]="$instance_id,$key_path,$username,$sg_id"
+              ((i++))
+          done <<< "$instances"
+
+          # Ask user to choose instance
+          read -p "Choose instance number to SSH: " inst_num
+          IFS=',' read -r instance_id key_path username sg_id <<< "${map[$inst_num]:-}"
+
+          if [[ -z "$instance_id" || -z "$key_path" || -z "$username" || -z "$sg_id" ]]; then
+              echo "Invalid selection or missing metadata in CSV."
+              return
+          fi
+
+          # fetch fresh public IP
+          echo "🔎 Fetching latest public IP for $instance_id..."
+          public_ip=$(aws ec2 describe-instances \
+              --instance-ids "$instance_id" \
+              --query 'Reservations[0].Instances[0].PublicIpAddress' \
+              --output text)
+
+          if [[ "$public_ip" == "None" || -z "$public_ip" ]]; then
+              echo "⚠️ Instance $instance_id has no public IP."
+              return
+          fi
+
+          # Try SSH
+          echo "⏳ Trying to SSH into $public_ip..."
           ssh -o StrictHostKeyChecking=no -i "$key_path" "$username@$public_ip" || {
-              echo "SSH failed. Adding your current IP to security group $sg_id..."
+              echo "⚠️ SSH failed. Adding your current IP to SG: $sg_id..."
               MY_IP=$(curl -s https://checkip.amazonaws.com)
-              aws ec2 authorize-security-group-ingress --group-id "$sg_id" --protocol tcp --port 22 --cidr "$MY_IP/32"
-              echo "Retrying SSH..."
-              ssh -o StrictHostKeyChecking=no -i "$key_path" "$username@$public_ip"
+              aws ec2 authorize-security-group-ingress \
+                  --group-id "$sg_id" \
+                  --protocol tcp --port 22 --cidr "$MY_IP/32" 2>/dev/null || true
+
+              echo "🔄 Waiting for SSH port to open on $public_ip..."
+              for attempt in {1..6}; do
+                  if nc -z -w5 "$public_ip" 22 2>/dev/null; then
+                      echo "✅ Port 22 is open, retrying SSH..."
+                      ssh -o StrictHostKeyChecking=no -i "$key_path" "$username@$public_ip"
+                      return
+                  else
+                      echo "Attempt $attempt/6: still waiting..."
+                      sleep 5
+                  fi
+              done
+
+              echo "❌ SSH still not available after 30 seconds."
           }
       }
+
 
       # Call the function immediately
       ssh_instance
