@@ -79,15 +79,15 @@ get_latest_ami() {
         "RedHat")
             aws ec2 describe-images --region "$AWS_REGION" \
                 --owners 309956199498 \
-                --filters "Name=name,Values=RHEL-8*" "Name=architecture,Values=x86_64" "Name=state,Values=available" \
+                --filters "Name=name,Values=RHEL-8.*-x86_64-*" \
                 --query 'Images | sort_by(@,&CreationDate)[-1].ImageId' \
                 --output text
             ;;
         "SUSE")
             aws ec2 describe-images --region "$AWS_REGION" \
-                --owners aws-marketplace \
-                --filters "Name=name,Values=suse-sles-15-sp*" "Name=architecture,Values=x86_64" "Name=virtualization-type,Values=hvm" \
-                --query 'sort_by(Images, &CreationDate)[-1].ImageId' \
+                --owners 013907871322 \
+                --filters "Name=name,Values=SLES-15-SP*-x86_64-*" \
+                --query 'Images | sort_by(@,&CreationDate)[-1].ImageId' \
                 --output text
             ;;
         "MacOS_Sequoia")

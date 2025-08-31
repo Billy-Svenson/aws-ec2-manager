@@ -111,6 +111,16 @@ PUBLIC_IP=$(aws ec2 describe-instances \
 echo "✅ Instance launched: $INSTANCE_ID"
 echo "🌐 Public IP: $PUBLIC_IP"
 
+SELECTED_DISTRO="${DISTROS[$((d_num-1))]}"
+
+# --- Map distro to default username BEFORE saving ---
+case "$SELECTED_DISTRO" in
+    Ubuntu22.04*|Ubuntu24.04* ) USERNAME="ubuntu" ;;
+    AmazonLinux* ) USERNAME="ec2-user" ;;
+    RedHat|SUSE ) USERNAME="ec2-user" ;;
+    MacOS_Sequoia ) USERNAME="ec2-user" ;;  # placeholder
+    * ) USERNAME="ec2-user" ;;
+esac
 
 # --- Save instance info to CSV ---
 save_instance_csv() {
@@ -140,14 +150,6 @@ SELECTED_DISTRO="${DISTROS[$((d_num-1))]}"
 # Ask if user wants to SSH in
 read -p "Do you want to SSH into this instance now? (y/n): " SSH_CHOICE
 if [[ "$SSH_CHOICE" == "y" ]]; then
-    case "$SELECTED_DISTRO" in
-        Ubuntu22.04*|Ubuntu24.04* ) USERNAME="ubuntu" ;;
-        AmazonLinux* ) USERNAME="ec2-user" ;;
-        RedHat|SUSE ) USERNAME="ec2-user" ;;
-        MacOS_Sequoia ) USERNAME="ec2-user" ;;  # placeholder
-        * ) USERNAME="ec2-user" ;;
-    esac
-
     echo "⏳ Waiting for SSH port to become available..."
     until nc -z -w5 "$PUBLIC_IP" 22; do
         echo "Waiting for SSH..."
