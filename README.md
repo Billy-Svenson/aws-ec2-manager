@@ -23,4 +23,4 @@ cd aws-ec2-manager
 chmod +x manager.sh launch.sh utils.sh
 
 #To manage instance
-./manage.sh
+./manager.sh
