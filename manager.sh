@@ -26,14 +26,94 @@ while true; do
       ./launch.sh
       ;;
     2)
-      list_security_groups() {
-        aws ec2 describe-security-groups \
-          --query "SecurityGroups[].{ID:GroupId,Name:GroupName,VPC:VpcId,Desc:Description}" \
-          --output table
-      }
-      echo "📦 Security Groups:"
-      list_security_groups
+       # Fetch security groups
+      groups=$(aws ec2 describe-security-groups \
+        --query "SecurityGroups[].{ID:GroupId,Name:GroupName}" \
+        --output text)
+
+      if [[ -z "$groups" ]]; then
+        echo "No Security Groups found."
+        break
+      fi
+
+      # Show list with numbering
+      i=1
+      declare -A sg_map
+      while read -r id name desc; do
+        echo "$i) $id | ${name:-N/A}"
+        sg_map[$i]="$id"
+        ((i++))
+      done <<< "$groups"
+
+      # Ask user to pick one
+      read -p "Choose Security Group number (0 to go back): " sg_choice
+      if [[ "$sg_choice" == "0" ]]; then
+        break
+      fi
+
+      selected_sg="${sg_map[$sg_choice]}"
+      if [[ -z "$selected_sg" ]]; then
+        echo "Invalid choice!"
+        break
+      fi
+
+      echo "✅ Selected SG: $selected_sg"
+
+      # Show actions for chosen SG
+      echo "What do you want to do?"
+      echo "1) Show rules"
+      echo "2) Add default inbound rules (22, 80, 443)"
+      echo "3) Add custom rule"
+      echo "4) Remove rule"
+      echo "5) Delete security group"
+      echo "0) Back"
+      read -p "Enter option: " sg_action
+
+      case $sg_action in
+        1)
+          echo "📜 Current rules:"
+          aws ec2 describe-security-groups --group-ids "$selected_sg" \
+            --query "SecurityGroups[].IpPermissions" --output json | jq .
+          ;;
+        2)
+          echo "⚡ Adding default rules..."
+          MY_IP1=$(curl -s https://checkip.amazonaws.com)
+          # Example: allow SSH, HTTP, HTTPS inbound + all outbound
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 22 --cidr "$MY1_IP/32"
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 80 --cidr "$MY1_IP/32"
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 443 --cidr "$MY1_IP/32"
+          echo "✅ Default rules added."
+          ;;
+        3)
+          read -p "Enter protocol (tcp/udp/-1 for all): " proto
+          read -p "Enter port (or 'all'): " port
+          read -p "Enter CIDR (e.g., 0.0.0.0/0): " cidr
+          if [[ "$port" == "all" ]]; then
+            aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol "$proto" --port all --cidr "$cidr"
+          else
+            aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol "$proto" --port "$port" --cidr "$cidr"
+          fi
+          echo "✅ Custom rule added."
+          ;;
+        4)
+          echo "Removing a rule..."
+          echo "ℹ️ You’ll need to specify protocol, port, and CIDR of the rule to remove."
+          read -p "Protocol: " proto
+          read -p "Port: " port
+          read -p "CIDR: " cidr
+          aws ec2 revoke-security-group-ingress --group-id "$selected_sg" --protocol "$proto" --port "$port" --cidr "$cidr"
+          echo "✅ Rule removed."
+          ;;
+        5)
+          aws ec2 delete-security-group --group-id "$selected_sg"
+          echo "🗑️ Security Group deleted."
+          ;;
+        0) 
+          ;;
+        *) echo "Invalid option." ;;
+      esac
       ;;
+
     3)
       echo "📦 Instances:"
       instances=$(aws ec2 describe-instances --query \
