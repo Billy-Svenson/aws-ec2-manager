@@ -6,7 +6,7 @@ source ./utils.sh
 #source ./list.sh
 
 while true; do
-  echo "================ AWS Manager ================"
+  echo "======================= AWS Manager ======================="
   echo "1) Launch an Instance"
   echo "2) Security Groups"
   echo "3) Instance Info"
@@ -17,7 +17,7 @@ while true; do
   echo "8) Monitoring (Logs / Cost)#only for root account"
   echo "9) SSH to instance"
   echo "0) Exit"
-  echo "==========================================="
+  echo "==========================================================="
   read -p "Choose an option: " choice
 
   case "$choice" in
@@ -79,9 +79,9 @@ while true; do
           echo "⚡ Adding default rules..."
           MY_IP1=$(curl -s https://checkip.amazonaws.com)
           # Example: allow SSH, HTTP, HTTPS inbound + all outbound
-          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 22 --cidr "$MY1_IP/32"
-          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 80 --cidr "$MY1_IP/32"
-          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 443 --cidr "$MY1_IP/32"
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 22 --cidr "$MY_IP1/32"
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 80 --cidr "$MY_IP1/32"
+          aws ec2 authorize-security-group-ingress --group-id "$selected_sg" --protocol tcp --port 443 --cidr "$MY_IP1/32"
           echo "✅ Default rules added."
           ;;
         3)
@@ -277,7 +277,7 @@ while true; do
                   --protocol tcp --port 22 --cidr "$MY_IP/32" 2>/dev/null || true
 
               echo "🔄 Waiting for SSH port to open on $public_ip..."
-              for attempt in {1..6}; do
+              for attempt in {1..3}; do
                   if nc -z -w5 "$public_ip" 22 2>/dev/null; then
                       echo "✅ Port 22 is open, retrying SSH..."
                       ssh -o StrictHostKeyChecking=no -i "$key_path" "$username@$public_ip"
