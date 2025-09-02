@@ -23,10 +23,17 @@ get_key_pairs() {
 
 create_key_pair() {
     local key_name="$1"
+    local key_path="$HOME/.ssh/${key_name}.pem"
+
+    if [[ -f "$key_path" ]]; then
+        error_exit "Key file $key_path already exists. Choose another name."
+    fi
+
     aws ec2 create-key-pair --key-name "$key_name" \
-        --query 'KeyMaterial' --output text > "$HOME/.ssh/${key_name}.pem"
-    chmod 400 "$HOME/.ssh/${key_name}.pem"
-    echo "$HOME/.ssh/${key_name}.pem"
+        --query 'KeyMaterial' --output text | tee "$key_path" > /dev/null
+
+    chmod 400 "$key_path"
+    echo "$key_path"
 }
 
 # --- Security Groups ---
