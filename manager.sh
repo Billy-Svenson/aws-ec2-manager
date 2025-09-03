@@ -115,20 +115,91 @@ while true; do
       ;;
 
     3)
-      echo "📦 Instances:"
-      instances=$(aws ec2 describe-instances --query \
-        "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name, InstanceType, PublicIpAddress]" \
-        --output text | awk 'NF')
+      
+      echo "📦 Fetching instance information..."
+      instances=$(aws ec2 describe-instances \
+          --query "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name, PublicIpAddress, Placement.AvailabilityZone, ImageId]" \
+          --output text | awk 'NF')
+
       if [[ -z "$instances" ]]; then
-        echo "No instances found."
-      else
-        i=1
-        while IFS=$'\t' read -r id name state itype ip; do
-          echo "$i) $id | ${name:-N/A} | $state | $itype | ${ip:-N/A}"
+          echo "No instances found."
+          break
+      fi
+
+      i=1
+      declare -A map
+      while IFS=$'\t' read -r id name state ip az ami; do
+          echo "$i) $id | ${name:-N/A} | $state | ${ip:-N/A} | $az | $ami"
+          map[$i]="$id,$name,$state,$ip,$az,$ami"
           ((i++))
-        done <<< "$instances"
+      done <<< "$instances"
+
+      read -p "Choose instance number: " inst_num
+      IFS=',' read -r instance_id instance_name state public_ip az ami_id <<< "${map[$inst_num]:-}"
+
+      if [[ -z "$instance_id" ]]; then
+          echo "Invalid choice."
+          break
+      fi
+
+      echo "📋 Instance details:"
+      echo "  ID: $instance_id"
+      echo "  Name: ${instance_name:-N/A}"
+      echo "  State: $state"
+      echo "  Public IP: ${public_ip:-N/A}"
+      echo "  AZ: $az"
+      echo "  AMI: $ami_id"
+
+      # --- Detect default username based on AMI ---
+      os_user="ec2-user" # fallback
+      case "$ami_id" in
+          ami-*)
+              if [[ "$ami_id" =~ ^ami- && $(aws ec2 describe-images --image-ids "$ami_id" --query 'Images[0].Name' --output text) =~ ubuntu ]]; then
+                  os_user="ubuntu"
+              elif [[ $(aws ec2 describe-images --image-ids "$ami_id" --query 'Images[0].Name' --output text) =~ amzn2 ]]; then
+                  os_user="ec2-user"
+              elif [[ $(aws ec2 describe-images --image-ids "$ami_id" --query 'Images[0].Name' --output text) =~ rhel ]]; then
+                  os_user="ec2-user"
+              elif [[ $(aws ec2 describe-images --image-ids "$ami_id" --query 'Images[0].Name' --output text) =~ suse ]]; then
+                  os_user="ec2-user"
+              fi
+              ;;
+      esac
+      echo "👤 Detected OS user: $os_user"
+
+      # Ask user if they want ephemeral SSH
+      read -p "Do you want to open an ephemeral SSH session? (y/N): " choice
+      if [[ "$choice" =~ ^[Yy]$ ]]; then
+          echo "🔑 Generating temporary SSH key..."
+          tmpdir=$(mktemp -d)
+          ssh-keygen -t rsa -b 4096 -f "$tmpdir/tempkey" -N "" -q
+
+          echo "📤 Sending public key to $instance_id using EC2 Instance Connect..."
+          if ! aws ec2-instance-connect send-ssh-public-key \
+              --instance-id "$instance_id" \
+              --availability-zone "$az" \
+              --instance-os-user "$os_user" \
+              --ssh-public-key "file://$tmpdir/tempkey.pub" >/dev/null; then
+              echo "❌ Failed to send SSH key. Maybe the instance doesn't support EC2 Instance Connect."
+              rm -rf "$tmpdir"
+              break
+          fi
+
+          if [[ -z "$public_ip" || "$public_ip" == "None" ]]; then
+              echo "⚠️ Instance has no public IP. Cannot SSH."
+              rm -rf "$tmpdir"
+              break
+          fi
+
+          echo "⏳ Opening SSH session to $public_ip..."
+          ssh -o StrictHostKeyChecking=no -i "$tmpdir/tempkey" "$os_user@$public_ip"
+
+          echo "🧹 Cleaning up temporary keys..."
+          rm -rf "$tmpdir"
+          echo "✅ Ephemeral SSH session ended."
       fi
       ;;
+
     4)
       echo "📦 Elastic IPs:"
       aws ec2 describe-addresses \
