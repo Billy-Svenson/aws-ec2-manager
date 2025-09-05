@@ -118,7 +118,7 @@ while true; do
       
       echo "📦 Fetching instance information..."
       instances=$(aws ec2 describe-instances \
-          --query "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name, PublicIpAddress, Placement.AvailabilityZone, ImageId]" \
+          --query "Reservations[].Instances[].[InstanceId, Tags[?Key=='Name'].Value|[0], State.Name, PublicIpAddress, Placement.AvailabilityZone, ImageId, join(',', SecurityGroups[].GroupId)]" \
           --output text | awk 'NF')
 
       if [[ -z "$instances" ]]; then
