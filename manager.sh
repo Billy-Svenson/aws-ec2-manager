@@ -128,14 +128,20 @@ while true; do
 
       i=1
       declare -A map
-      while IFS=$'\t' read -r id name state ip az ami; do
-          echo "$i) $id | ${name:-N/A} | $state | ${ip:-N/A} | $az | $ami"
-          map[$i]="$id,$name,$state,$ip,$az,$ami"
+      while IFS=$'\t' read -r id name state ip az ami sg; do
+          echo "$i) $id | ${name:-N/A} | $state | ${ip:-N/A} | $az | $ami | SG: ${sg:-N/A}"
+          map[$i]="$id,$name,$state,$ip,$az,$ami,$sg"
           ((i++))
       done <<< "$instances"
 
+      echo "0) Back to main menu"
       read -p "Choose instance number: " inst_num
-      IFS=',' read -r instance_id instance_name state public_ip az ami_id <<< "${map[$inst_num]:-}"
+
+      if [[ "$inst_num" == "0" ]]; then
+          break
+      fi
+
+      IFS=',' read -r instance_id instance_name state public_ip az ami_id sg_ids <<< "${map[$inst_num]:-}"
 
       if [[ -z "$instance_id" ]]; then
           echo "Invalid choice."
@@ -149,6 +155,7 @@ while true; do
       echo "  Public IP: ${public_ip:-N/A}"
       echo "  AZ: $az"
       echo "  AMI: $ami_id"
+      echo "  Security Groups: ${sg_ids:-N/A}"
 
       # --- Detect default username based on AMI ---
       os_user="ec2-user" # fallback
